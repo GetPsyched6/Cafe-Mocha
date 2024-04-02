@@ -4,22 +4,27 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
@@ -27,12 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Modifier
@@ -40,9 +44,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -66,6 +74,11 @@ data class FoodItem(
 
 data class FoodCategory(
     val title: String, val items: List<FoodItem>
+)
+
+//! data class for the view model cart updation.
+data class CartItem(
+    val foodItem: FoodItem, val quantity: Int
 )
 
 val categories = listOf(
@@ -120,7 +133,7 @@ val categories = listOf(
                 "https://images.immediate.co.uk/production/volatile/sites/30/2020/08/bundt_cake-76e50c9.jpg",
                 DietType.EGG
             ), FoodItem(
-                "Butterscotch Crème",
+                "Butterscotch Crème Cake",
                 3164,
                 "https://images.immediate.co.uk/production/volatile/sites/30/2020/08/bundt_cake-76e50c9.jpg",
                 DietType.VEG
@@ -139,8 +152,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
-//                    AppNavigation(navController = navController)
-                    FoodItemComposable(foodItem = categories[0].items[0])
+                    AppNavigation(navController = navController)
                 }
             }
         }
@@ -155,7 +167,7 @@ fun AppNavigation(navController: NavHostController) {
         composable("home") { HomeLayout(navController = navController, logoIcon = logoIcon) }
         composable("orders") {
             OrderLayout(
-                navController = navController, logoIcon = logoIcon
+                navController = navController, logoIcon = logoIcon, categories = categories
             )
         }
     }
@@ -170,7 +182,6 @@ fun HomeLayout(
             modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .background(color = Color.LightGray)
         ) {
             Row(
                 modifier = Modifier
@@ -212,8 +223,15 @@ fun HomeLayout(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrderLayout(
-    modifier: Modifier = Modifier, navController: NavHostController, @DrawableRes logoIcon: Int
+    modifier: Modifier = Modifier,
+    navController: NavHostController,
+    @DrawableRes logoIcon: Int,
+    categories: List<FoodCategory>,
+    viewModel: OrderViewModel = viewModel()
 ) {
+    val cartItems by viewModel.cartItems.observeAsState(initial = listOf())
+    val totalQuantity = cartItems.sumOf { it.quantity }
+
     Scaffold(topBar = {
         TopAppBar(title = {
             Row(
@@ -237,75 +255,142 @@ fun OrderLayout(
             }
         })
     }) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(
-                    rememberScrollState()
-                )
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                contentPadding = innerPadding
 
+            ) {
+                items(categories) {
+                    FoodCategoryComposable(foodCategory = it, viewModel = viewModel)
+                }
+            }
+            AnimatedVisibility(
+                visible = totalQuantity > 0,
+                enter = slideInVertically(
+                    // Slide in from the bottom of the screen
+                    initialOffsetY = { it }),
+                exit = slideOutVertically(
+                    // Slide out to the bottom of the screen
+                    targetOffsetY = { it }),
+                modifier = Modifier.align(Alignment.BottomCenter) // Position the button at the bottom center
+            ) {
+                // The UI for your checkout button
+                Button(
+                    onClick = { /* Navigate to checkout */ },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Go to Checkout")
+                }
+            }
         }
     }
 }
 
+
 @Composable
-fun FoodItemComposable(modifier: Modifier = Modifier, foodItem: FoodItem) {
-    Column(modifier = Modifier.padding(8.dp)) {
+fun FoodCategoryComposable(
+    modifier: Modifier = Modifier, foodCategory: FoodCategory, viewModel: OrderViewModel
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(foodCategory.title)
+        foodCategory.items.forEach {
+            FoodItemComposable(foodItem = it, viewModel = viewModel)
+        }
+    }
+
+}
+
+@Composable
+fun FoodItemComposable(
+    modifier: Modifier = Modifier, foodItem: FoodItem, viewModel: OrderViewModel
+) {
+    Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
                 painter = painterResource(foodItem.dietType.iconRes),
                 contentDescription = foodItem.dietType.description,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(20.dp)
             )
             Text(
                 foodItem.dietType.description,
-                fontSize = 20.sp,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
                 color = Color(foodItem.dietType.textColor)
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AsyncImage(
-                model = "https://images.immediate.co.uk/production/volatile/sites/30/2020/08/mocha-001-8301418.jpg?quality=90&webp=true&resize=375,341",
-                contentDescription = "whatever", /* ?TODO: Fix this */
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(20.dp)),
-                placeholder = painterResource(R.drawable.coffee),
-                /* ?TODO: add error placeholder here */
-            )
-            Column {
-                Text(foodItem.name)
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("₹" + foodItem.price.toString())
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = foodItem.imageUrl,
+                    contentDescription = "whatever", /* ?TODO: Fix this */
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(RoundedCornerShape(20.dp)),
+                    placeholder = painterResource(R.drawable.coffee),
+                    /* ?TODO: add error placeholder here */
+                )
+                Column {
+                    Text(foodItem.name, softWrap = true, modifier = modifier.width(120.dp))
+                    Spacer(modifier = Modifier.size(4.dp))
+                    Text("₹" + foodItem.price.toString())
+                }
             }
-            AddFoodButton()
-
+            Spacer(modifier = Modifier.weight(1f))
+            AddFoodButton(
+                foodItem = foodItem, viewModel = viewModel
+            )
         }
     }
 }
 
 @Composable
-fun AddFoodButton(modifier: Modifier = Modifier) {
-    var itemAmount by remember { mutableIntStateOf(0) }
-    Row(modifier = Modifier, verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { if (itemAmount > 0) itemAmount-- else itemAmount = 0 }) {
-            Text("-")
+fun AddFoodButton(modifier: Modifier = Modifier, foodItem: FoodItem, viewModel: OrderViewModel) {
+    val cartItems by viewModel.cartItems.observeAsState(initial = listOf())
+    val itemQuantity = cartItems.firstOrNull { it.foodItem == foodItem }?.quantity ?: 0
+    val displayText = if (itemQuantity == 0) "add" else itemQuantity.toString()
+
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (itemQuantity != 0) {
+            TextButton(
+                onClick = { viewModel.updateCart(foodItem, -1) },
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(32.dp)
+            ) {
+                Text("-", fontSize = 24.sp, textAlign = TextAlign.Center)
+
+            }
         }
-        Text(if (itemAmount == 0) "add" else itemAmount.toString())
-        IconButton(onClick = { itemAmount++ }) {
-            Text("+")
+        Text(
+            displayText, modifier = Modifier
+                .width(36.dp)
+                .clickable(enabled = itemQuantity == 0) {
+                    viewModel.updateCart(foodItem, 1)
+                }, textAlign = TextAlign.Center, textDecoration = TextDecoration.Underline
+        )
+        TextButton(
+            onClick = { viewModel.updateCart(foodItem, 1) },
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.size(32.dp)
+        ) {
+            Text(if (itemQuantity != 0) "+" else "", fontSize = 20.sp, textAlign = TextAlign.Center)
         }
     }
 }
@@ -315,9 +400,6 @@ fun AddFoodButton(modifier: Modifier = Modifier) {
 fun GreetingPreview() {
     CafeMochaTheme {
         val navController = rememberNavController()
-//        AppNavigation(navController = navController)
-        val logoIcon = R.drawable.cafe
-//        OrderLayout(navController = navController, logoIcon = logoIcon)
-        FoodItemComposable(foodItem = categories[0].items[0])
+        AppNavigation(navController = navController)
     }
 }
